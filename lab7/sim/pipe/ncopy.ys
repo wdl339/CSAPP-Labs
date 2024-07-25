@@ -1,0 +1,242 @@
+#/* $begin ncopy-ys */
+##################################################################
+# ncopy.ys - Copy a src block of len words to dst.
+# Return the number of positive words (>0) contained in src.
+#
+# Include your name and ID here.
+# 韦东良 522031910516
+#
+# Describe how and why you modified the baseline code.
+# This description is presented in chronological order.
+# 1. Use one instruction 'iaddq' instead of two instructions 'irmovq' + 'addq'/'subq',
+#	 because it can reduce one instruction execution. 
+#
+# 2. Delete "xorq %rax,%rax", because the default value of %rax is already 0.
+#
+# 3. loop unrolling. After testing, it is found that the k in k * 1 loop unrolling and its CPE are as follow:
+#    2:10.34  3:10.05  4:9.92  5:9.89  6:9.88  7：9.91  8:9.92   9:9.92
+# 	 Firstly, I chose 6 * 1 unrolling, but after subsequent improvements, I found that 9 * 1 unrolling should be chosen.
+#    If len - 9 > 0, it enters the unrolling loop.
+# 
+# 4. There are too many "iaddq $8, %rdi" and "iaddq $8, %rsi" in the unrolling loop.
+# 	 So in Loopx: change "mrmovq (%rdi), %r10" to "mrmovq n(%rdi), %r10"(n = 8(x - 1)).
+# 	 Then delete all "iaddq $8, %rdi", and in Test add "iaddq $72, %rdi".
+#    In Loopx: change "rmmovq %r10, (%rsi)" to "rmmovq %r10, n(%rsi)".
+#	 Then delete all "iaddq $8, %rsi", and in Test add "iaddq $72, %rsi".
+#
+# 5. There is nothing between "mrmovq (%rdi), %r10" and "rmmovq %r10, (%rsi)" , which will cause load/use hazard.
+#	 The situation now:
+#	 	mrmovq (%rdi), %r10
+# 	 	bubble
+#	 	rmmovq %r10, (%rsi)
+#	 Change it to:
+#	 	mrmovq (%rdi), %r10	
+#		mrmovq 8(%rdi), %r9
+#		mrmovq 16(%rdi), %r8
+#		rmmovq %r10, (%rsi)	
+#		rmmovq %r9, 8(%rsi)
+#		rmmovq %r8, 16(%rsi)
+#	 (Advance the mrmovq and rmmovq of the last two loop)
+#	 It avoids load/use hazard.
+#	 
+# 6. For the rest data (len < 9), CPE is still big. 
+#	 It can still use loop unrolling. I use 3 * 1 unrolling when len < 9 at first, but I found it's not the best.
+#	 I found that I can use a ternary search tree, using the jl, je, jg instructions to determine the amount of rest data, 
+#	 and jump to the corresponding position(Finalx) based on this amount.
+#	 The structure of this tree:
+#            3
+#           /  \
+#          1    5
+#         / \  / \
+#        0  2  4  7
+#                / \
+#               6   8
+#	 Use Label Root,Left,Right,RR to build the tree.
+# 	 The positions of 0 and 1 are relatively high because their CPE are bigger.
+#	 Test the order of jl,je and jg to achieve the best CPE.
+#
+# 7. 
+#	 The situation of code dealing with the rest data now:
+#		jle Final1		
+#		iaddq $1, %rax		
+#	Final1:
+#		mrmovq (%rdi), %r10	
+#		andq %r10, %r10		
+#		rmmovq %r10, (%rsi)	
+#		jle Done		
+#		iaddq $1, %rax		
+#	 Change it to:
+#	Final1:
+#		mrmovq (%rdi), %r10	
+#		jle Final12		
+#		iaddq $1, %rax		
+#	Final12:	
+#		andq %r10, %r10		
+#		rmmovq %r10, (%rsi)	
+#		jle Done		
+#		iaddq $1, %rax	
+#	 The advance of mrmovq can decrease the CPE. Because it can alleviate the load/use hazard better and (I guess) speed up the jmp when misprediction.
+#
+#
+##################################################################
+# Do not modify this portion
+# Function prologue.
+# %rdi = src, %rsi = dst, %rdx = len
+ncopy:
+
+##################################################################
+# You can modify this portion
+	# Loop header
+	iaddq $-9,%rdx
+	jl Root
+	
+Loop1:	
+	mrmovq (%rdi), %r10	# read val from src...
+	mrmovq 8(%rdi), %r9
+	mrmovq 16(%rdi), %r8
+	rmmovq %r10, (%rsi)	# ...and store it to dst
+	rmmovq %r9, 8(%rsi)
+	rmmovq %r8, 16(%rsi)
+	andq %r10, %r10		# val <= 0?
+	jle Loop2		# if so, goto Loop2:
+	iaddq $1, %rax		# count++
+Loop2:	
+	andq %r9, %r9		# val <= 0?
+	jle Loop3		# if so, goto Loop3:
+	iaddq $1, %rax		# count++
+Loop3:	
+	andq %r8, %r8		# val <= 0?
+	jle Loop4		# if so, goto Loop4:
+	iaddq $1, %rax		# count++
+Loop4:	
+	mrmovq 24(%rdi), %r10	# read val from src...
+	mrmovq 32(%rdi), %r9
+	mrmovq 40(%rdi), %r8
+	rmmovq %r10, 24(%rsi)	# ...and store it to dst
+	rmmovq %r9, 32(%rsi)
+	rmmovq %r8, 40(%rsi)
+	andq %r10, %r10 	# val <= 0?
+	jle Loop5		# if so, goto Loop5:
+	iaddq $1, %rax		# count++
+Loop5:	
+	andq %r9, %r9		# val <= 0?
+	jle Loop6		# if so, goto Loop6:
+	iaddq $1, %rax		# count++
+Loop6:	
+	andq %r8, %r8		# val <= 0?
+	jle Loop7		# if so, goto Loop7:
+	iaddq $1, %rax		# count++
+Loop7:	
+	mrmovq 48(%rdi), %r10	# read val from src...
+	mrmovq 56(%rdi), %r9
+	mrmovq 64(%rdi), %r8
+	rmmovq %r10, 48(%rsi)	# ...and store it to dst
+	rmmovq %r9, 56(%rsi)
+	rmmovq %r8, 64(%rsi)
+	andq %r10, %r10 	# val <= 0?
+	jle Loop8		# if so, goto Loop8:
+	iaddq $1, %rax		# count++
+Loop8:	
+	andq %r9, %r9		# val <= 0?
+	jle Loop9		# if so, goto Loop9:
+	iaddq $1, %rax		# count++
+Loop9:	
+	andq %r8, %r8		# val <= 0?
+	jle Test		# if so, goto Test:
+	iaddq $1, %rax		# count++
+
+Test:
+	iaddq $72, %rdi		# src+=9
+	iaddq $72, %rsi		# dst+=9
+	iaddq $-9, %rdx		# len - 9 >= 0?
+	jge Loop1		# if so, goto Loop1:
+
+Root:					# the root of the ternary search tree
+	iaddq $6,%rdx
+	jl Left
+	jg Right
+	je Final3
+
+Left:
+	iaddq $2,%rdx
+	je Final1
+	iaddq $-1,%rdx
+	je Final2
+	ret					# no rest data, return
+
+Right:
+	iaddq $-2,%rdx
+	jg RR
+	jl Final4
+	je Final5
+
+RR:
+	iaddq $-2,%rdx
+	jl Final6 
+	je Final7
+
+Final8:	
+	mrmovq 56(%rdi), %r10	# read val from src...
+	andq %r10, %r10		# val <= 0?
+	rmmovq %r10, 56(%rsi)	# ...and store it to dst
+Final7:
+	mrmovq 48(%rdi), %r10	# read val from src...
+	jle Final72		# if val <= 0, goto Final72
+	iaddq $1, %rax		# count++
+Final72:	
+	andq %r10, %r10		# val <= 0?
+	rmmovq %r10, 48(%rsi)	# ...and store it to dst
+Final6:
+	mrmovq 40(%rdi), %r10	# read val from src...
+	jle Final62		# if val <= 0, goto Final62
+	iaddq $1, %rax		# count++
+Final62:	
+	andq %r10, %r10		# val <= 0?
+	rmmovq %r10, 40(%rsi)	# ...and store it to dst
+Final5:
+	mrmovq 32(%rdi), %r10	# read val from src...
+	jle Final52		# if val <= 0, goto Final52
+	iaddq $1, %rax		# count++
+Final52:	
+	andq %r10, %r10		# val <= 0?
+	rmmovq %r10, 32(%rsi)	# ...and store it to dst
+Final4:
+	mrmovq 24(%rdi), %r10	# read val from src...
+	jle Final42		# if val <= 0, goto Final42
+	iaddq $1, %rax		# count++
+Final42:	
+	andq %r10, %r10		# val <= 0?
+	rmmovq %r10, 24(%rsi)	# ...and store it to dst
+Final3:
+	mrmovq 16(%rdi), %r10	# read val from src...
+	jle Final32		# if val <= 0, goto Final32
+	iaddq $1, %rax		# count++
+Final32:	
+	andq %r10, %r10		# val <= 0?
+	rmmovq %r10, 16(%rsi)	# ...and store it to dst
+Final2:
+	mrmovq 8(%rdi), %r10	# read val from src...
+	jle Final22		# if val <= 0, goto Final22
+	iaddq $1, %rax		# count++
+Final22:	
+	andq %r10, %r10		# val <= 0?
+	rmmovq %r10, 8(%rsi)	# ...and store it to dst
+Final1:
+	mrmovq (%rdi), %r10	# read val from src...
+	jle Final12		# if val <= 0, goto Final12
+	iaddq $1, %rax		# count++
+Final12:	
+	andq %r10, %r10		# val <= 0?
+	rmmovq %r10, (%rsi)	# ...and store it to dst
+	jle Done		# if val <= 0, return
+	iaddq $1, %rax		# count++
+
+##################################################################
+# Do not modify the following section of code
+# Function epilogue.
+Done:
+	ret
+##################################################################
+# Keep the following label at the end of your function
+End:
+#/* $end ncopy-ys */

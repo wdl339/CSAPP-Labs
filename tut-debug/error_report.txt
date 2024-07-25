@@ -1,0 +1,111 @@
+/*
+ * BUG#0
+ * description: 
+     miss semicolon
+ * location: 
+ *   int a = 10  (line 18)
+ * evidence: 
+ *   test.c:19: error: two or more data types in declaration specifiers
+ */
+
+BUG#1
+description:
+    miss semicolon
+location:
+    enum { buf_size = buf_nrec * 100 } (line 52)
+evidence:
+    gen_sort.c:54:9: 错误：expected ‘;’, identifier or ‘(’ before ‘struct’
+
+
+
+BUG#2
+description:
+    miss semicolon
+location:
+    } record_t (line 58)
+evidence:
+    gen_sort.c:58:11: 错误：expected ‘;’ before ‘static’
+
+
+
+BUG#3
+description:
+    wrong type name
+location:
+    gen_rec(record *rec) (line 114)
+evidence:
+    gen_sort.c:114:9: 错误：unknown type name ‘record’; did you mean ‘record_t’?
+
+
+
+BUG#4
+description:
+    forget to ‘#include <stdio.h>’
+location:
+    FILE *file = fopen(fn, "r");
+evidence:
+    gen_sort.c:187:2: 错误：未知的类型名‘FILE’
+    gen_sort.c:187:2: 附注：‘FILE’ is defined in header ‘<stdio.h>’; did you forget to ‘#include <stdio.h>’?
+
+
+
+BUG#5
+description:
+    miss brace
+location:
+    if (!file) (line 189)
+evidence:
+    gen_sort.c:189:2: 警告：this ‘if’ clause does not guard... [-Wmisleading-indentation]
+    gen_sort.c:195:2: 错误：expected identifier or ‘(’ before ‘while’
+
+
+
+BUG#6
+description:
+    wrong expression
+location:
+    enum { rec_len = key_len + pad_len };
+evidence:
+    It should generates 100 byte records. The correct expression is "enum { rec_len = key_len + recno_len + pad_len };"
+
+
+
+BUG#7
+description:
+    wrong mode of opening file
+location:
+    FILE *file = fopen(fn, "r");
+evidence:
+    error: unable to open file sort_2.dat. The correct expression is "FILE *file = fopen(fn, "w");"
+
+
+
+BUG#8
+description:
+    wrong variable
+location:
+    for (j = 0; j < 10; i++ )
+evidence:
+    obviously, it should be "for (j = 0; j < 10; j++ )"
+
+
+
+BUG#9
+description:
+    wrong range
+location:
+    for (cnt = 0; (cnt <= buf_nrec) 
+evidence:
+     段错误（核心已转储）
+    cnt can't be equal to buf_nrec
+
+
+
+BUG#10
+description:
+    wrong malloc allocation size
+location:
+    char *buf = (char *)malloc(buf_nrec);
+evidence:
+    段错误（核心已转储）
+    One record has 100 bytes, it should be "char *buf = (char *)malloc(buf_size);", where buf_size is equal to buf_nrec*100

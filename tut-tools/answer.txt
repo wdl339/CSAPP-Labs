@@ -1,0 +1,9 @@
+question 1:
+ps -au |tail -n +2| sort -k11 | awk '{print $11}'
+
+question 2:
+cd ~   cd /etc   ls -l | grep -F .conf | sort -nk5| head -n5|sort -rnk5
+
+question 3:
+sudo touch echo.sh    chmod ugo+x echo.sh    echo 'echo "hello world!"' >> echo.sh
+
